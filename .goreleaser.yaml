@@ -1,0 +1,63 @@
+version: 2
+
+project_name: dependency-track-exporter
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: dependency-track-exporter
+    main: ./main.go
+    binary: dependency-track-exporter
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X dependency-track-exporter/internal/version.version={{ .Version }}
+      - -X dependency-track-exporter/internal/version.commit={{ .Commit }}
+      - -X dependency-track-exporter/internal/version.date={{ .Date }}
+
+dockers:
+  - id: image-amd64
+    ids:
+      - dependency-track-exporter
+    dockerfile: Dockerfile
+    use: buildx
+    goos: linux
+    goarch: amd64
+    image_templates:
+      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-exporter:{{ .Version }}-amd64
+      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-exporter:latest-amd64
+
+  - id: image-arm64
+    ids:
+      - dependency-track-exporter
+    dockerfile: Dockerfile
+    use: buildx
+    goos: linux
+    goarch: arm64
+    image_templates:
+      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-exporter:{{ .Version }}-arm64
+      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-exporter:latest-arm64
+
+docker_manifests:
+  - name_template: ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-exporter:{{ .Version }}
+    image_templates:
+      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-exporter:{{ .Version }}-amd64
+      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-exporter:{{ .Version }}-arm64
+
+  - name_template: ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-exporter:latest
+    image_templates:
+      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-exporter:latest-amd64
+      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-exporter:latest-arm64
+
+release:
+  github:
+    owner: "{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}"
+    name: dependency-track-exporter
