@@ -9,11 +9,11 @@ import (
 	"syscall"
 	"time"
 
-	"dependency-track-exporter/internal/client"
-	"dependency-track-exporter/internal/config"
-	"dependency-track-exporter/internal/render"
-	"dependency-track-exporter/internal/store"
-	"dependency-track-exporter/internal/version"
+	"dependency-track-postprocessupdater/internal/client"
+	"dependency-track-postprocessupdater/internal/config"
+	"dependency-track-postprocessupdater/internal/render"
+	"dependency-track-postprocessupdater/internal/store"
+	"dependency-track-postprocessupdater/internal/version"
 )
 
 func main() {

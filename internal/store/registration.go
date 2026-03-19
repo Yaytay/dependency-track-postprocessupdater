@@ -1,7 +1,7 @@
 package store
 
 import (
-	"dependency-track-exporter/internal/model"
+	"dependency-track-postprocessupdater/internal/model"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"dependency-track-exporter/internal/config"
+	"dependency-track-postprocessupdater/internal/config"
 )
 
 type Registration struct {

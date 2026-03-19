@@ -1,7 +1,7 @@
 FROM gcr.io/distroless/static-debian12:nonroot
 
-COPY dependency-track-exporter /usr/local/bin/dependency-track-exporter
+COPY dependency-track-postprocessupdater /usr/local/bin/dependency-track-postprocessupdater
 
 EXPOSE 9916
 
-ENTRYPOINT ["/usr/local/bin/dependency-track-exporter"]
+ENTRYPOINT ["/usr/local/bin/dependency-track-postprocessupdater"]

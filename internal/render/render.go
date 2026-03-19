@@ -1,7 +1,7 @@
 package render
 
 import (
-	"dependency-track-exporter/internal/store"
+	"dependency-track-postprocessupdater/internal/store"
 	"fmt"
 	"net/http"
 )

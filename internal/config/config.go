@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"dependency-track-exporter/internal/version"
+	"dependency-track-postprocessupdater/internal/version"
 )
 
 type Config struct {

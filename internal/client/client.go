@@ -3,8 +3,8 @@ package client
 import (
 	"bytes"
 	"context"
-	"dependency-track-exporter/internal/config"
-	"dependency-track-exporter/internal/model"
+	"dependency-track-postprocessupdater/internal/config"
+	"dependency-track-postprocessupdater/internal/model"
 	"encoding/json"
 	"fmt"
 	"io"

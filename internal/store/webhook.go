@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	"dependency-track-exporter/internal/client"
-	"dependency-track-exporter/internal/config"
+	"dependency-track-postprocessupdater/internal/client"
+	"dependency-track-postprocessupdater/internal/config"
 )
 
 type WebhookEvent struct {
