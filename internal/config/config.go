@@ -151,6 +151,10 @@ func NewLogger(format, level string, out io.Writer) *Logger {
 	}
 }
 
+func (l *Logger) DebugEnabled() bool {
+	return enabled(l.level, "debug")
+}
+
 func (l *Logger) Debug(msg string, kv ...any) { l.log("debug", msg, kv...) }
 func (l *Logger) Info(msg string, kv ...any)  { l.log("info", msg, kv...) }
 func (l *Logger) Warn(msg string, kv ...any)  { l.log("warn", msg, kv...) }

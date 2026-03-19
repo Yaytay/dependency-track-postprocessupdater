@@ -1,10 +1,12 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -26,7 +28,17 @@ func HandleWebhook(ctx context.Context, logger *config.Logger, dtrack *client.Cl
 		return
 	}
 
-	logger.Debug("received webhook", "method", r.Method, "url", r.URL, "body", r.Body)
+	if logger.DebugEnabled() {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "unable to read body", http.StatusBadRequest)
+			return
+		}
+		logger.Debug("received webhook", "method", r.Method, "url", r.URL, "body", string(body))
+		r.Body = io.NopCloser(bytes.NewReader(body))
+	} else {
+		logger.Debug("received webhook", "method", r.Method, "url", r.URL)
+	}
 
 	var evt WebhookEvent
 	if err := json.NewDecoder(r.Body).Decode(&evt); err != nil {
