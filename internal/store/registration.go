@@ -1,10 +1,12 @@
 package store
 
 import (
+	"bytes"
 	"dependency-track-postprocessupdater/internal/model"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -88,7 +90,17 @@ func HandleRegister(logger *config.Logger, store *FileStore, _ *Store, w http.Re
 		return
 	}
 
-	logger.Debug("received registration", "method", r.Method, "url", r.URL, "body", r.Body)
+	if logger.DebugEnabled() {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "unable to read body", http.StatusBadRequest)
+			return
+		}
+		logger.Debug("received registration", "method", r.Method, "url", r.URL, "body", string(body))
+		r.Body = io.NopCloser(bytes.NewReader(body))
+	} else {
+		logger.Info("received registration", "method", r.Method, "url", r.URL)
+	}
 
 	var reg Registration
 	if err := json.NewDecoder(r.Body).Decode(&reg); err != nil {
