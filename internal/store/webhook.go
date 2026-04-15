@@ -72,6 +72,11 @@ func HandleWebhook(ctx context.Context, logger *config.Logger, dtrack PostProces
 	name := strings.TrimSpace(evt.Notification.Subject.Project.Name)
 	version := strings.TrimSpace(evt.Notification.Subject.Project.Version)
 
+	if evt.Notification.Group != "BOM_PROCESSED" {
+		logger.Info("webhook ignored; not BOM_PROCESSED", "name", name, "version", version, "project_uuid", projectUUID, "group", evt.Notification.Group)
+		return
+	}
+
 	if projectUUID == "" {
 		http.Error(w, "project uuid missing", http.StatusBadRequest)
 		return
