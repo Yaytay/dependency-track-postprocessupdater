@@ -17,12 +17,21 @@ import (
 )
 
 type WebhookEvent struct {
-	Project struct {
-		UUID    string `json:"uuid"`
-		Name    string `json:"name"`
-		Version string `json:"version"`
-	} `json:"project"`
-	ProjectUUID string `json:"projectUuid"`
+	Notification struct {
+		Level     string `json:"level"`
+		Scope     string `json:"scope"`
+		Group     string `json:"group"`
+		Timestamp string `json:"timestamp"`
+		Title     string `json:"title"`
+		Content   string `json:"content"`
+		Subject   struct {
+			Project struct {
+				UUID    string `json:"uuid"`
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"project"`
+		} `json:"subject"`
+	} `json:"notification"`
 }
 
 func HandleWebhook(ctx context.Context, logger *config.Logger, dtrack *client.Client, store *FileStore, metrics *Store, w http.ResponseWriter, r *http.Request) {
@@ -40,7 +49,7 @@ func HandleWebhook(ctx context.Context, logger *config.Logger, dtrack *client.Cl
 		logger.Debug("received webhook", "method", r.Method, "url", r.URL, "body", string(body))
 		r.Body = io.NopCloser(bytes.NewReader(body))
 	} else {
-		logger.Debug("received webhook", "method", r.Method, "url", r.URL)
+		logger.Info("received webhook", "method", r.Method, "url", r.URL)
 	}
 
 	var evt WebhookEvent
@@ -49,12 +58,15 @@ func HandleWebhook(ctx context.Context, logger *config.Logger, dtrack *client.Cl
 		return
 	}
 
-	projectUUID := strings.TrimSpace(evt.ProjectUUID)
-	if projectUUID == "" {
-		projectUUID = strings.TrimSpace(evt.Project.UUID)
+	if evtJSON, err := json.Marshal(evt); err == nil {
+		logger.Info("received webhook event", "event", string(evtJSON))
+	} else {
+		logger.Warn("received webhook event; failed to marshal for logging", "err", err)
 	}
-	name := strings.TrimSpace(evt.Project.Name)
-	version := strings.TrimSpace(evt.Project.Version)
+
+	projectUUID := strings.TrimSpace(evt.Notification.Subject.Project.UUID)
+	name := strings.TrimSpace(evt.Notification.Subject.Project.Name)
+	version := strings.TrimSpace(evt.Notification.Subject.Project.Version)
 
 	if projectUUID == "" {
 		http.Error(w, "project uuid missing", http.StatusBadRequest)
