@@ -12,9 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"dependency-track-postprocessupdater/internal/client"
 	"dependency-track-postprocessupdater/internal/config"
+	"dependency-track-postprocessupdater/internal/model"
 )
+
+type PostProcessor interface {
+	ApplyPostProcessing(ctx context.Context, projectUUID string, tags []string, suppressions []model.Suppression) error
+}
 
 type WebhookEvent struct {
 	Notification struct {
@@ -34,7 +38,7 @@ type WebhookEvent struct {
 	} `json:"notification"`
 }
 
-func HandleWebhook(ctx context.Context, logger *config.Logger, dtrack *client.Client, store *FileStore, metrics *Store, w http.ResponseWriter, r *http.Request) {
+func HandleWebhook(ctx context.Context, logger *config.Logger, dtrack PostProcessor, store *FileStore, metrics *Store, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

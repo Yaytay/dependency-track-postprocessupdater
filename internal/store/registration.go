@@ -32,20 +32,33 @@ type RegistrationState struct {
 }
 
 type FileStore struct {
-	dir string
-	mu  sync.Mutex
+	dir   string
+	mu    sync.Mutex
+	clock func() time.Time
 }
 
 func NewFileStore(dir string) (*FileStore, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	return &FileStore{dir: dir}, nil
+	return &FileStore{
+		dir: dir,
+		clock: func() time.Time {
+			return time.Now().UTC()
+		},
+	}, nil
 }
 
 func registrationKey(name, version string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(name) + "\n" + strings.TrimSpace(version)))
 	return hex.EncodeToString(sum[:])
+}
+
+func (s *FileStore) now() time.Time {
+	if s != nil && s.clock != nil {
+		return s.clock().UTC()
+	}
+	return time.Now().UTC()
 }
 
 func (s *FileStore) registrationDir(name, version string) string {
@@ -67,7 +80,7 @@ func (s *FileStore) Put(reg Registration) error {
 	if strings.TrimSpace(reg.Version) == "" {
 		return errors.New("version is required")
 	}
-	reg.UpdatedAt = time.Now().UTC()
+	reg.UpdatedAt = s.now()
 
 	dir := s.registrationDir(reg.Name, reg.Version)
 	regPath := s.registrationPath(reg.Name, reg.Version)
