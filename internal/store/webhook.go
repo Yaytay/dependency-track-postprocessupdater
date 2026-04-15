@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"dependency-track-postprocessupdater/internal/client"
 	"dependency-track-postprocessupdater/internal/config"
@@ -17,7 +18,9 @@ import (
 
 type WebhookEvent struct {
 	Project struct {
-		UUID string `json:"uuid"`
+		UUID    string `json:"uuid"`
+		Name    string `json:"name"`
+		Version string `json:"version"`
 	} `json:"project"`
 	ProjectUUID string `json:"projectUuid"`
 }
@@ -50,35 +53,41 @@ func HandleWebhook(ctx context.Context, logger *config.Logger, dtrack *client.Cl
 	if projectUUID == "" {
 		projectUUID = strings.TrimSpace(evt.Project.UUID)
 	}
+	name := strings.TrimSpace(evt.Project.Name)
+	version := strings.TrimSpace(evt.Project.Version)
+
 	if projectUUID == "" {
 		http.Error(w, "project uuid missing", http.StatusBadRequest)
 		return
 	}
+	if name == "" || version == "" {
+		http.Error(w, "project name/version missing", http.StatusBadRequest)
+		return
+	}
 
-	reg, err := store.Get(projectUUID)
+	reg, err := store.Get(name, version)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			logger.Info("webhook ignored; no registration", "project_uuid", projectUUID)
+			logger.Info("webhook ignored; no registration", "name", name, "version", version, "project_uuid", projectUUID)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		logger.Error("registration lookup failed", "project_uuid", projectUUID, "err", err)
+		logger.Error("registration lookup failed", "name", name, "version", version, "err", err)
 		http.Error(w, "lookup failed", http.StatusInternalServerError)
 		return
 	}
 
-	if err := dtrack.ApplyPostProcessing(ctx, reg.ProjectUUID, reg.Tags, reg.Suppressions); err != nil {
-		logger.Error("post-processing failed", "project_uuid", reg.ProjectUUID, "err", err)
+	if err := dtrack.ApplyPostProcessing(ctx, projectUUID, reg.Tags, reg.Suppressions); err != nil {
+		logger.Error("post-processing failed", "project_uuid", projectUUID, "name", name, "version", version, "err", err)
 		http.Error(w, fmt.Sprintf("processing failed: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	if err := store.Delete(projectUUID); err != nil {
-		logger.Warn("failed to delete processed registration", "project_uuid", projectUUID, "err", err)
-	} else {
-		logger.Info("registration processed", "project_uuid", projectUUID)
+	if err := store.UpdateLastNotifiedAt(name, version, time.Now().UTC()); err != nil {
+		logger.Warn("failed to update lastNotifiedAt", "name", name, "version", version, "err", err)
 	}
 
 	metrics.IncrementProcessed()
+	logger.Info("registration processed", "name", name, "version", version, "project_uuid", projectUUID)
 	w.WriteHeader(http.StatusOK)
 }
