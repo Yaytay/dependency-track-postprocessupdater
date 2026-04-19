@@ -218,6 +218,8 @@ func (s *FileStore) PurgeOlderThan(cutoff time.Time) error {
 }
 
 func HandleRegister(logger *config.Logger, store *FileStore, _ *Store, w http.ResponseWriter, r *http.Request) {
+	logger.Info("received registration", "method", r.Method, "url", r.URL)
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
