@@ -1,8 +1,10 @@
 package model
 
 type Suppression struct {
-	VulnerabilityName string                `json:"vulnerability,omitempty"`
-	Reason            string                `json:"reason,omitempty"`
+	VulnerabilityName string                `json:"vulnerabilityName,omitempty"`
+	PackageUrl        string                `json:"packageUrl,omitempty"`
+	PackageUrlRegex   string                `json:"packageUrlRegex,omitempty"`
+	Reason            string                `json:"notes,omitempty"`
 	State             AnalysisState         `json:"state"`
 	Justification     AnalysisJustification `json:"justification"`
 	Response          AnalysisResponse      `json:"response"`

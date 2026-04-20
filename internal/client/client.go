@@ -477,7 +477,7 @@ func (c *Client) applySuppressionsAsAnalyses(ctx context.Context, projectUUID st
 					State:         suppression.State,
 					Justification: suppression.Justification,
 					Response:      suppression.Response,
-					Details:       suppression.Reason,
+					Details:       suppression.Details,
 				}
 
 				if err := c.putAnalysis(ctx, reqBody); err != nil {
