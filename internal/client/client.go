@@ -464,19 +464,49 @@ func (c *Client) applySuppressionsAsAnalyses(ctx context.Context, projectUUID st
 			continue
 		}
 
+		state := suppression.State
+		if strings.TrimSpace(string(state)) == "" {
+			state = model.AnalysisStateNotSet
+		}
+
+		justification := suppression.Justification
+		if strings.TrimSpace(string(justification)) == "" {
+			justification = model.AnalysisJustificationNotSet
+		}
+
+		response := suppression.Response
+		if strings.TrimSpace(string(response)) == "" {
+			response = model.AnalysisResponseNotSet
+		}
+
 		for _, component := range bom.Components {
 			for _, vuln := range component.Vulnerabilities {
 				if strings.TrimSpace(vuln.ID) != vulnName {
 					continue
 				}
 
+				logPayload := struct {
+					Component     bomComponent      `json:"component"`
+					Vulnerability bomVulnerability  `json:"vulnerability"`
+					Suppression   model.Suppression `json:"suppression"`
+				}{
+					Component:     component,
+					Vulnerability: vuln,
+					Suppression:   suppression,
+				}
+				if b, err := json.Marshal(logPayload); err == nil {
+					c.logger.Info("suppressing vulnerability", "details", string(b))
+				} else {
+					c.logger.Info("suppressing vulnerability", "component", component.UUID, "vulnerability", vuln.ID, "suppression", vulnName)
+				}
+
 				reqBody := AnalysisRequest{
 					Project:       projectUUID,
 					Component:     component.UUID,
 					Vulnerability: vuln.UUID,
-					State:         suppression.State,
-					Justification: suppression.Justification,
-					Response:      suppression.Response,
+					State:         state,
+					Justification: justification,
+					Response:      response,
 					Details:       suppression.Details,
 				}
 
