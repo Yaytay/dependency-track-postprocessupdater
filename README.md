@@ -115,3 +115,11 @@ Flags:
 
 ## Typical pipeline flow
 
+
+## Compatibility
+
+This service has been tested with:
+* Dependency-Track v4.14.x (maintenance mode)
+* Dependency-Track v5.x (active development)
+
+The service uses the `/api/v1/` REST API endpoints which are supported in both versions.
