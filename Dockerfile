@@ -1,6 +1,7 @@
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:aafe993665bf6200db38a02c11a9351e782a84b6a45e7f33b6695638c88e3931
 
-COPY dependency-track-postprocessupdater /usr/local/bin/dependency-track-postprocessupdater
+ARG TARGETPLATFORM
+COPY ${TARGETPLATFORM}/dependency-track-postprocessupdater /usr/local/bin/dependency-track-postprocessupdater
 
 EXPOSE 9916
 

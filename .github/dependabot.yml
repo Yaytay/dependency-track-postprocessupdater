@@ -13,3 +13,7 @@ updates:
     directory: "/" # Location of go.mod
     schedule:
       interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"

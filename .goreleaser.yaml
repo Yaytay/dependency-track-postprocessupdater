@@ -23,39 +23,19 @@ builds:
       - -X dependency-track-postprocessupdater/internal/version.commit={{ .Commit }}
       - -X dependency-track-postprocessupdater/internal/version.date={{ .Date }}
 
-dockers:
-  - id: image-amd64
+dockers_v2:
+  - id: image
     ids:
       - dependency-track-postprocessupdater
     dockerfile: Dockerfile
-    use: buildx
-    goos: linux
-    goarch: amd64
-    image_templates:
-      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-postprocessupdater:{{ .Version }}-amd64
-      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-postprocessupdater:latest-amd64
-
-  - id: image-arm64
-    ids:
-      - dependency-track-postprocessupdater
-    dockerfile: Dockerfile
-    use: buildx
-    goos: linux
-    goarch: arm64
-    image_templates:
-      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-postprocessupdater:{{ .Version }}-arm64
-      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-postprocessupdater:latest-arm64
-
-docker_manifests:
-  - name_template: ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-postprocessupdater:{{ .Version }}
-    image_templates:
-      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-postprocessupdater:{{ .Version }}-amd64
-      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-postprocessupdater:{{ .Version }}-arm64
-
-  - name_template: ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-postprocessupdater:latest
-    image_templates:
-      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-postprocessupdater:latest-amd64
-      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-postprocessupdater:latest-arm64
+    images:
+      - ghcr.io/{{ tolower .Env.GITHUB_REPOSITORY_OWNER }}/dependency-track-postprocessupdater
+    tags:
+      - "{{ .Version }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
 
 release:
   github:
