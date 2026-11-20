@@ -21,15 +21,21 @@ type fakePostProcessor struct {
 		projectUUID  string
 		tags         []string
 		suppressions []model.Suppression
+		description  *string
+		properties   []model.Property
+		teams        []string
 	}
 	err error
 }
 
-func (f *fakePostProcessor) ApplyPostProcessing(ctx context.Context, projectUUID string, tags []string, suppressions []model.Suppression) error {
+func (f *fakePostProcessor) ApplyPostProcessing(ctx context.Context, projectUUID string, tags []string, suppressions []model.Suppression, description *string, properties []model.Property, teams []string) error {
 	f.calls++
 	f.want.projectUUID = projectUUID
 	f.want.tags = append([]string(nil), tags...)
 	f.want.suppressions = append([]model.Suppression(nil), suppressions...)
+	f.want.description = description
+	f.want.properties = properties
+	f.want.teams = teams
 	return f.err
 }
 
@@ -47,10 +53,14 @@ func newWebhookTestStore(t *testing.T) *FileStore {
 func writeRegistration(t *testing.T, store *FileStore, name, version string) Registration {
 	t.Helper()
 
+	description := "project description"
 	reg := Registration{
-		Name:    name,
-		Version: version,
-		Tags:    []string{"tag-a", "tag-b"},
+		Name:        name,
+		Version:     version,
+		Description: &description,
+		Properties:  []model.Property{{GroupName: "group", PropertyName: "key", PropertyValue: "value"}},
+		Teams:       []string{"team-uuid"},
+		Tags:        []string{"tag-a", "tag-b"},
 		Suppressions: []model.Suppression{
 			{VulnerabilityName: "CVE-1234-5678"},
 		},
@@ -109,6 +119,9 @@ func TestHandleWebhookProcessesMatchingRegistration(t *testing.T) {
 	}
 	if fake.calls != 1 {
 		t.Fatalf("ApplyPostProcessing calls = %d, want 1", fake.calls)
+	}
+	if fake.want.description == nil || *fake.want.description != "project description" || len(fake.want.properties) != 1 || fake.want.properties[0].PropertyValue != "value" || len(fake.want.teams) != 1 || fake.want.teams[0] != "team-uuid" {
+		t.Fatalf("metadata not passed through: %+v", fake.want)
 	}
 	if fake.want.projectUUID != "uuid-123" {
 		t.Fatalf("projectUUID = %q, want %q", fake.want.projectUUID, "uuid-123")

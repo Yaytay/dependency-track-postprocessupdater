@@ -17,7 +17,7 @@ import (
 )
 
 type PostProcessor interface {
-	ApplyPostProcessing(ctx context.Context, projectUUID string, tags []string, suppressions []model.Suppression) error
+	ApplyPostProcessing(ctx context.Context, projectUUID string, tags []string, suppressions []model.Suppression, description *string, properties []model.Property, teams []string) error
 }
 
 type WebhookEvent struct {
@@ -98,7 +98,7 @@ func HandleWebhook(ctx context.Context, logger *config.Logger, dtrack PostProces
 		return
 	}
 
-	if err := dtrack.ApplyPostProcessing(ctx, projectUUID, reg.Tags, reg.Suppressions); err != nil {
+	if err := dtrack.ApplyPostProcessing(ctx, projectUUID, reg.Tags, reg.Suppressions, reg.Description, reg.Properties, reg.Teams); err != nil {
 		logger.Error("post-processing failed", "project_uuid", projectUUID, "name", name, "version", version, "err", err)
 		http.Error(w, fmt.Sprintf("processing failed: %v", err), http.StatusInternalServerError)
 		return

@@ -22,6 +22,9 @@ import (
 type Registration struct {
 	Name         string              `json:"name"`
 	Version      string              `json:"version"`
+	Description  *string             `json:"description,omitempty"`
+	Properties   []model.Property    `json:"properties,omitempty"`
+	Teams        []string            `json:"teams,omitempty"`
 	Tags         []string            `json:"tags,omitempty"`
 	Suppressions []model.Suppression `json:"suppressions,omitempty"`
 	UpdatedAt    time.Time           `json:"updatedAt"`

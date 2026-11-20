@@ -1,5 +1,13 @@
 package model
 
+type Property struct {
+	GroupName     string `json:"groupName"`
+	PropertyName  string `json:"propertyName"`
+	PropertyValue string `json:"propertyValue"`
+	PropertyType  string `json:"propertyType,omitempty"`
+	Description   string `json:"description,omitempty"`
+}
+
 type Suppression struct {
 	VulnerabilityName string                `json:"vulnerabilityName,omitempty"`
 	PackageUrl        string                `json:"packageUrl,omitempty"`

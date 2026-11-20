@@ -3,7 +3,7 @@
 This service solves a very specific problem.
 
 As part of our build pipelines we upload SBOMs to Dependency-Track.
-This includes setting tags on the resulting project, and uploading vulnerability suppressions.
+This includes setting project metadata and tags, granting team access, and uploading vulnerability suppressions.
 
 Tags and suppressions cannot be uploaded to Dependency-Track until the uploaded BOM has been processed,
 an asynchronous process that can take a few minutes to complete — blocking the build pipeline
@@ -21,8 +21,8 @@ When the event is received, this service updates the project in Dependency-Track
 The pipeline uses two steps:
 
 1. **Register post-processing**
-   - The pipeline sends the project UUID, tags, and suppressions to this service.
-   - The registration is stored on disk, using the project UUID as the filename.
+   - The pipeline sends the project name, version, and desired post-processing to this service.
+   - The registration is stored on disk, keyed by project name and version.
    - If the same project is registered again, the latest registration wins.
 
 2. **Upload the SBOM**
@@ -31,9 +31,9 @@ The pipeline uses two steps:
 
 3. **Webhook-driven completion**
    - Dependency-Track sends a webhook once BOM processing is complete.
-   - This service looks up the stored registration for the project UUID.
-   - It applies the tags and suppressions to the project.
-   - On success, the registration file is deleted.
+   - This service looks up the stored registration by project name and version.
+   - It applies the registered changes to the project.
+   - On success, the notification time is recorded; the registration remains available for subsequent uploads.
 
 ## Design goals
 
@@ -47,16 +47,16 @@ This means:
 
 - duplicate registrations are fine
 - duplicate webhook deliveries are fine
-- if a webhook arrives after processing has already completed, it is treated as a no-op
+- repeated webhook deliveries reapply the registered changes
 
 ## Storage model
 
-Registrations are stored as one file per project UUID in the configured storage directory.
+Registrations are stored by project name and version in the configured storage directory.
 
 Example lifecycle:
 ```
-text POST /register -> writes <storage-dir>/<project-uuid>.json
-POST /webhook -> reads <storage-dir>/<project-uuid>.json -> applies post-processing -> deletes the file
+POST /register -> stores registration by name and version
+POST /webhook -> reads registration -> applies post-processing -> records notification time
 ```
 
 
@@ -67,9 +67,25 @@ POST /webhook -> reads <storage-dir>/<project-uuid>.json -> applies post-process
 Registers the post-processing actions for a project.
 
 Expected payload includes:
-- project UUID
+- project name and version
+- optional description, properties, and team UUIDs
 - tags
 - suppressions
+
+Example:
+
+```json
+{
+  "name": "example",
+  "version": "1.0",
+  "description": "Example project",
+  "properties": [{"groupName": "build", "propertyName": "source", "propertyValue": "CI", "propertyType": "STRING"}],
+  "teams": ["team-uuid"],
+  "tags": ["production"]
+}
+```
+
+Omitting `description` leaves it unchanged; an empty string clears it. Properties are upserted by group and name (new properties default to type `STRING`), and team UUIDs are added to project access without removing existing teams. Updating an existing property changes its value; its type and description are set when it is created. The API key needs portfolio and access-management permissions for these operations.
 
 ### `POST /webhook`
 

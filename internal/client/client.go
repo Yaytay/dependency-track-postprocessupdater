@@ -252,7 +252,7 @@ func (c *Client) fetchProjectVulnerabilityCounts(ctx context.Context, projectUUI
 	return counts, nil
 }
 
-func (c *Client) addTags(ctx context.Context, projectUUID string, tags []string) error {
+func (c *Client) updateProjectMetadata(ctx context.Context, projectUUID string, tags []string, description *string) error {
 	newTags := make([]ProjectTag, 0, len(tags))
 	for _, t := range tags {
 		t = strings.TrimSpace(t)
@@ -260,7 +260,7 @@ func (c *Client) addTags(ctx context.Context, projectUUID string, tags []string)
 			newTags = append(newTags, ProjectTag{Name: t})
 		}
 	}
-	if len(newTags) == 0 {
+	if len(newTags) == 0 && description == nil {
 		return nil
 	}
 
@@ -269,9 +269,26 @@ func (c *Client) addTags(ctx context.Context, projectUUID string, tags []string)
 		return err
 	}
 
-	updatedJSON, err := replaceProjectTags(projectJSON, newTags)
-	if err != nil {
-		return err
+	updatedJSON := projectJSON
+	if len(newTags) > 0 {
+		updatedJSON, err = replaceProjectTags(projectJSON, newTags)
+		if err != nil {
+			return err
+		}
+	}
+	if description != nil {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(updatedJSON, &fields); err != nil {
+			return err
+		}
+		fields["description"], err = json.Marshal(*description)
+		if err != nil {
+			return err
+		}
+		updatedJSON, err = json.Marshal(fields)
+		if err != nil {
+			return err
+		}
 	}
 
 	return c.updateProjectJSON(ctx, updatedJSON)
@@ -403,10 +420,24 @@ type AnalysisRequest struct {
 	Details       string                      `json:"details,omitempty"`
 }
 
-func (c *Client) ApplyPostProcessing(ctx context.Context, projectUUID string, tags []string, suppressions []model.Suppression) error {
-	if len(tags) > 0 {
-		if err := c.addTags(ctx, projectUUID, tags); err != nil {
+func (c *Client) ApplyPostProcessing(ctx context.Context, projectUUID string, tags []string, suppressions []model.Suppression, description *string, properties []model.Property, teams []string) error {
+	if len(tags) > 0 || description != nil {
+		if err := c.updateProjectMetadata(ctx, projectUUID, tags, description); err != nil {
 			return err
+		}
+	}
+	if len(properties) > 0 {
+		if err := c.applyProperties(ctx, projectUUID, properties); err != nil {
+			return err
+		}
+	}
+	for _, team := range teams {
+		team = strings.TrimSpace(team)
+		if team == "" {
+			return fmt.Errorf("team UUID must not be empty")
+		}
+		if _, err := c.requestJSON(ctx, http.MethodPut, "/api/v1/acl/mapping", map[string]string{"project": projectUUID, "team": team}, http.StatusCreated, http.StatusOK, http.StatusConflict); err != nil {
+			return fmt.Errorf("assign team %s: %w", team, err)
 		}
 	}
 	if len(suppressions) > 0 {
@@ -415,6 +446,77 @@ func (c *Client) ApplyPostProcessing(ctx context.Context, projectUUID string, ta
 		}
 	}
 	return nil
+}
+
+func (c *Client) applyProperties(ctx context.Context, projectUUID string, properties []model.Property) error {
+	path := "/api/v1/project/" + url.PathEscape(projectUUID) + "/property"
+	body, err := c.requestJSON(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return err
+	}
+	var existing []model.Property
+	if err := json.Unmarshal(body, &existing); err != nil {
+		return err
+	}
+	keys := make(map[[2]string]bool, len(existing))
+	for _, property := range existing {
+		keys[[2]string{property.GroupName, property.PropertyName}] = true
+	}
+	for _, property := range properties {
+		if strings.TrimSpace(property.GroupName) == "" || strings.TrimSpace(property.PropertyName) == "" {
+			return fmt.Errorf("property groupName and propertyName are required")
+		}
+		key := [2]string{property.GroupName, property.PropertyName}
+		method := http.MethodPut
+		var payload any = property
+		if keys[key] {
+			method = http.MethodPost
+			payload = struct {
+				GroupName     string `json:"groupName"`
+				PropertyName  string `json:"propertyName"`
+				PropertyValue string `json:"propertyValue"`
+			}{property.GroupName, property.PropertyName, property.PropertyValue}
+		} else if property.PropertyType == "" {
+			property.PropertyType = "STRING"
+			payload = property
+		}
+		if _, err := c.requestJSON(ctx, method, path, payload, http.StatusOK, http.StatusCreated, http.StatusNoContent); err != nil {
+			return fmt.Errorf("apply property %s/%s: %w", property.GroupName, property.PropertyName, err)
+		}
+		keys[key] = true
+	}
+	return nil
+}
+
+func (c *Client) requestJSON(ctx context.Context, method, path string, payload any, success ...int) ([]byte, error) {
+	var body io.Reader
+	if payload != nil {
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		body = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Api-Key", c.apiKey)
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	for _, status := range success {
+		if resp.StatusCode == status {
+			return io.ReadAll(resp.Body)
+		}
+	}
+	message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(message)))
 }
 
 func (c *Client) fetchProjectBomWithVulnerabilities(ctx context.Context, projectUUID string) (*bomResponse, error) {
