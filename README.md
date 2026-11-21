@@ -89,6 +89,8 @@ Example:
 
 Omitting `description` leaves it unchanged; an empty string clears it. Properties are upserted by group and name (new properties default to type `STRING`), and team UUIDs are added to project access without removing existing teams. Updating an existing property changes its value; its type and description are set when it is created. The API key needs portfolio and access-management permissions for these operations.
 
+The service reads the current settings and skips writes that would make no change. Team checks require access-management read permission, and suppression checks require permission to read analyses; read failures stop processing rather than assuming a match.
+
 Registration returns `202` after storing it and, when a project has a nonzero `lastBomImport`, applying it immediately. A missing project or import timestamp leaves it for a later webhook. The timestamp is a best-effort readiness signal: it does not rule out a newer BOM still processing. Lookup or processing failures return `500`, but the registration remains stored for retry or a future webhook; changes may already be partially applied. Project lookup requires `VIEW_PORTFOLIO`.
 
 ### `POST /webhook`

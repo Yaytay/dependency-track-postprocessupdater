@@ -307,15 +307,28 @@ func (c *Client) updateProjectMetadata(ctx context.Context, projectUUID string, 
 	if err != nil {
 		return err
 	}
+	var current struct {
+		Tags        []ProjectTag `json:"tags"`
+		Description string       `json:"description"`
+	}
+	if err := json.Unmarshal(projectJSON, &current); err != nil {
+		return err
+	}
+	merged := mergeProjectTags(current.Tags, newTags)
+	needsTags := len(merged) > len(mergeProjectTags(current.Tags, nil))
+	needsDescription := description != nil && current.Description != *description
+	if !needsTags && !needsDescription {
+		return nil
+	}
 
 	updatedJSON := projectJSON
-	if len(newTags) > 0 {
+	if needsTags {
 		updatedJSON, err = replaceProjectTags(projectJSON, newTags)
 		if err != nil {
 			return err
 		}
 	}
-	if description != nil {
+	if needsDescription {
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(updatedJSON, &fields); err != nil {
 			return err
@@ -470,14 +483,27 @@ func (c *Client) ApplyPostProcessing(ctx context.Context, projectUUID string, ta
 			return err
 		}
 	}
+	assignedTeams := make(map[string]bool)
 	for _, team := range teams {
 		team = strings.TrimSpace(team)
 		if team == "" {
 			return fmt.Errorf("team UUID must not be empty")
 		}
+		if assignedTeams[team] {
+			continue
+		}
+		assigned, err := c.teamHasProject(ctx, team, projectUUID)
+		if err != nil {
+			return fmt.Errorf("check team %s: %w", team, err)
+		}
+		if assigned {
+			assignedTeams[team] = true
+			continue
+		}
 		if _, err := c.requestJSON(ctx, http.MethodPut, "/api/v1/acl/mapping", map[string]string{"project": projectUUID, "team": team}, http.StatusCreated, http.StatusOK, http.StatusConflict); err != nil {
 			return fmt.Errorf("assign team %s: %w", team, err)
 		}
+		assignedTeams[team] = true
 	}
 	if len(suppressions) > 0 {
 		if err := c.applySuppressionsAsAnalyses(ctx, projectUUID, suppressions); err != nil {
@@ -485,6 +511,31 @@ func (c *Client) ApplyPostProcessing(ctx context.Context, projectUUID string, ta
 		}
 	}
 	return nil
+}
+
+func (c *Client) teamHasProject(ctx context.Context, team, projectUUID string) (bool, error) {
+	const pageSize = 100
+	for page := 1; ; page++ {
+		path := "/api/v1/acl/team/" + url.PathEscape(team) + "?pageNumber=" + strconv.Itoa(page) + "&pageSize=" + strconv.Itoa(pageSize)
+		body, err := c.requestJSON(ctx, http.MethodGet, path, nil, http.StatusOK)
+		if err != nil {
+			return false, err
+		}
+		var projects []struct {
+			UUID string `json:"uuid"`
+		}
+		if err := json.Unmarshal(body, &projects); err != nil {
+			return false, err
+		}
+		for _, project := range projects {
+			if project.UUID == projectUUID {
+				return true, nil
+			}
+		}
+		if len(projects) < pageSize {
+			return false, nil
+		}
+	}
 }
 
 func (c *Client) applyProperties(ctx context.Context, projectUUID string, properties []model.Property) error {
@@ -497,9 +548,9 @@ func (c *Client) applyProperties(ctx context.Context, projectUUID string, proper
 	if err := json.Unmarshal(body, &existing); err != nil {
 		return err
 	}
-	keys := make(map[[2]string]bool, len(existing))
+	keys := make(map[[2]string]string, len(existing))
 	for _, property := range existing {
-		keys[[2]string{property.GroupName, property.PropertyName}] = true
+		keys[[2]string{property.GroupName, property.PropertyName}] = property.PropertyValue
 	}
 	for _, property := range properties {
 		if strings.TrimSpace(property.GroupName) == "" || strings.TrimSpace(property.PropertyName) == "" {
@@ -508,7 +559,10 @@ func (c *Client) applyProperties(ctx context.Context, projectUUID string, proper
 		key := [2]string{property.GroupName, property.PropertyName}
 		method := http.MethodPut
 		var payload any = property
-		if keys[key] {
+		if value, exists := keys[key]; exists {
+			if value == property.PropertyValue {
+				continue
+			}
 			method = http.MethodPost
 			payload = struct {
 				GroupName     string `json:"groupName"`
@@ -522,7 +576,7 @@ func (c *Client) applyProperties(ctx context.Context, projectUUID string, proper
 		if _, err := c.requestJSON(ctx, method, path, payload, http.StatusOK, http.StatusCreated, http.StatusNoContent); err != nil {
 			return fmt.Errorf("apply property %s/%s: %w", property.GroupName, property.PropertyName, err)
 		}
-		keys[key] = true
+		keys[key] = property.PropertyValue
 	}
 	return nil
 }
@@ -626,6 +680,23 @@ func (c *Client) applySuppressionsAsAnalyses(ctx context.Context, projectUUID st
 					continue
 				}
 
+				reqBody := AnalysisRequest{
+					Project:       projectUUID,
+					Component:     component.UUID,
+					Vulnerability: vuln.UUID,
+					State:         state,
+					Justification: justification,
+					Response:      response,
+					Details:       suppression.Details,
+				}
+				matches, err := c.analysisMatches(ctx, reqBody)
+				if err != nil {
+					return err
+				}
+				if matches {
+					continue
+				}
+
 				logPayload := struct {
 					Component     bomComponent      `json:"component"`
 					Vulnerability bomVulnerability  `json:"vulnerability"`
@@ -641,16 +712,6 @@ func (c *Client) applySuppressionsAsAnalyses(ctx context.Context, projectUUID st
 					c.logger.Info("suppressing vulnerability", "component", component.UUID, "vulnerability", vuln.ID, "suppression", vulnName)
 				}
 
-				reqBody := AnalysisRequest{
-					Project:       projectUUID,
-					Component:     component.UUID,
-					Vulnerability: vuln.UUID,
-					State:         state,
-					Justification: justification,
-					Response:      response,
-					Details:       suppression.Details,
-				}
-
 				if err := c.putAnalysis(ctx, reqBody); err != nil {
 					return err
 				}
@@ -659,6 +720,42 @@ func (c *Client) applySuppressionsAsAnalyses(ctx context.Context, projectUUID st
 	}
 
 	return nil
+}
+
+func (c *Client) analysisMatches(ctx context.Context, desired AnalysisRequest) (bool, error) {
+	u, err := url.Parse(c.baseURL + "/api/v1/analysis")
+	if err != nil {
+		return false, err
+	}
+	query := u.Query()
+	query.Set("project", desired.Project)
+	query.Set("component", desired.Component)
+	query.Set("vulnerability", desired.Vulnerability)
+	u.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("X-Api-Key", c.apiKey)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return false, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var current struct {
+		State         model.AnalysisState         `json:"analysisState"`
+		Justification model.AnalysisJustification `json:"analysisJustification"`
+		Response      model.AnalysisResponse      `json:"analysisResponse"`
+		Details       string                      `json:"analysisDetails"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&current); err != nil {
+		return false, err
+	}
+	return current.State == desired.State && current.Justification == desired.Justification && current.Response == desired.Response && current.Details == desired.Details, nil
 }
 
 func (c *Client) putAnalysis(ctx context.Context, reqBody AnalysisRequest) error {

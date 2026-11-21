@@ -34,6 +34,8 @@ func TestApplyPostProcessingMetadata(t *testing.T) {
 			}
 		case "GET /api/v1/project/project-id/property":
 			io.WriteString(w, `[{"groupName":"g","propertyName":"existing"}]`)
+		case "GET /api/v1/acl/team/team-id":
+			io.WriteString(w, `[]`)
 		case "POST /api/v1/project/project-id/property", "PUT /api/v1/project/project-id/property":
 			var property model.Property
 			if err := json.NewDecoder(r.Body).Decode(&property); err != nil {
@@ -69,7 +71,7 @@ func TestApplyPostProcessingMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(calls) != 6 {
+	if len(calls) != 7 {
 		t.Fatalf("unexpected calls: %v", calls)
 	}
 }
@@ -117,6 +119,52 @@ func TestReadyProject(t *testing.T) {
 			got, err := c.ReadyProject(context.Background(), "a & b", "1+2")
 			if got != tc.want || (err != nil) != tc.wantErr {
 				t.Fatalf("got %q, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestSuppressionsSkipMatchingAnalysis(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		analysis string
+		status   int
+		wantPut  bool
+		wantErr  bool
+	}{
+		{"matching", `{"analysisState":"FALSE_POSITIVE","analysisJustification":"CODE_NOT_PRESENT","analysisResponse":"UPDATE","analysisDetails":"reason"}`, 200, false, false},
+		{"state differs", `{"analysisState":"IN_TRIAGE","analysisJustification":"CODE_NOT_PRESENT","analysisResponse":"UPDATE","analysisDetails":"reason"}`, 200, true, false},
+		{"justification differs", `{"analysisState":"FALSE_POSITIVE","analysisJustification":"NOT_SET","analysisResponse":"UPDATE","analysisDetails":"reason"}`, 200, true, false},
+		{"response differs", `{"analysisState":"FALSE_POSITIVE","analysisJustification":"CODE_NOT_PRESENT","analysisResponse":"NOT_SET","analysisDetails":"reason"}`, 200, true, false},
+		{"details differ", `{"analysisState":"FALSE_POSITIVE","analysisJustification":"CODE_NOT_PRESENT","analysisResponse":"UPDATE","analysisDetails":"other"}`, 200, true, false},
+		{"lookup error", `denied`, 403, false, true},
+		{"invalid response", `{`, 200, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gets, puts := 0, 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method + " " + r.URL.Path {
+				case "GET /api/v1/bom/cyclonedx/project/project-id":
+					io.WriteString(w, `{"components":[{"uuid":"component-id","vulnerabilities":[{"uuid":"vuln-id","id":"CVE-1"}]}]}`)
+				case "GET /api/v1/analysis":
+					gets++
+					if r.URL.Query().Get("project") != "project-id" || r.URL.Query().Get("component") != "component-id" || r.URL.Query().Get("vulnerability") != "vuln-id" || r.Header.Get("X-Api-Key") != "key" {
+						t.Errorf("unexpected lookup: %s", r.URL.String())
+					}
+					w.WriteHeader(tc.status)
+					io.WriteString(w, tc.analysis)
+				case "PUT /api/v1/analysis":
+					puts++
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(404)
+				}
+			}))
+			defer server.Close()
+			c := NewClient(server.URL, "key", time.Second, config.NewLogger("logfmt", "error", io.Discard))
+			err := c.applySuppressionsAsAnalyses(context.Background(), "project-id", []model.Suppression{{VulnerabilityName: "CVE-1", State: model.AnalysisStateFalsePositive, Justification: model.AnalysisJustificationCodeNotPresent, Response: model.AnalysisResponseUpdate, Details: "reason"}})
+			if (err != nil) != tc.wantErr || gets != 1 || (puts == 1) != tc.wantPut {
+				t.Fatalf("got error %v, %d lookups, %d updates", err, gets, puts)
 			}
 		})
 	}
