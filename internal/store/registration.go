@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"dependency-track-postprocessupdater/internal/model"
 	"encoding/hex"
@@ -220,7 +221,12 @@ func (s *FileStore) PurgeOlderThan(cutoff time.Time) error {
 	return nil
 }
 
-func HandleRegister(logger *config.Logger, store *FileStore, _ *Store, w http.ResponseWriter, r *http.Request) {
+type RegistrationProcessor interface {
+	PostProcessor
+	ReadyProject(ctx context.Context, name, version string) (string, error)
+}
+
+func HandleRegister(logger *config.Logger, store *FileStore, dtrack RegistrationProcessor, w http.ResponseWriter, r *http.Request) {
 	logger.Info("received registration", "method", r.Method, "url", r.URL)
 
 	if r.Method != http.MethodPost {
@@ -261,5 +267,18 @@ func HandleRegister(logger *config.Logger, store *FileStore, _ *Store, w http.Re
 	}
 
 	logger.Info("registration stored", "name", reg.Name, "version", reg.Version, "tags", len(reg.Tags), "suppressions", len(reg.Suppressions))
+	projectUUID, err := dtrack.ReadyProject(r.Context(), strings.TrimSpace(reg.Name), strings.TrimSpace(reg.Version))
+	if err != nil {
+		logger.Error("project lookup failed", "name", reg.Name, "version", reg.Version, "err", err)
+		http.Error(w, fmt.Sprintf("registration stored; project lookup failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if projectUUID != "" {
+		if err := dtrack.ApplyPostProcessing(r.Context(), projectUUID, reg.Tags, reg.Suppressions, reg.Description, reg.Properties, reg.Teams); err != nil {
+			logger.Error("post-processing failed", "project_uuid", projectUUID, "err", err)
+			http.Error(w, fmt.Sprintf("registration stored; processing failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
 	w.WriteHeader(http.StatusAccepted)
 }

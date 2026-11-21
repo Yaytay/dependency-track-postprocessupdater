@@ -24,6 +24,8 @@ The pipeline uses two steps:
    - The pipeline sends the project name, version, and desired post-processing to this service.
    - The registration is stored on disk, keyed by project name and version.
    - If the same project is registered again, the latest registration wins.
+   - The service looks up the project and applies the registration immediately if it has a last BOM import timestamp. 
+     The registration remains stored.
 
 2. **Upload the SBOM**
    - The pipeline uploads the SBOM to Dependency-Track as usual.
@@ -86,6 +88,8 @@ Example:
 ```
 
 Omitting `description` leaves it unchanged; an empty string clears it. Properties are upserted by group and name (new properties default to type `STRING`), and team UUIDs are added to project access without removing existing teams. Updating an existing property changes its value; its type and description are set when it is created. The API key needs portfolio and access-management permissions for these operations.
+
+Registration returns `202` after storing it and, when a project has a nonzero `lastBomImport`, applying it immediately. A missing project or import timestamp leaves it for a later webhook. The timestamp is a best-effort readiness signal: it does not rule out a newer BOM still processing. Lookup or processing failures return `500`, but the registration remains stored for retry or a future webhook; changes may already be partially applied. Project lookup requires `VIEW_PORTFOLIO`.
 
 ### `POST /webhook`
 

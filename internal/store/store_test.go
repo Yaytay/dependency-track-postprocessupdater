@@ -43,7 +43,7 @@ func TestHandleRegisterThenWebhookProcessesBOMProcessedNotification(t *testing.T
 	regReq := httptest.NewRequest(http.MethodPost, "/register", bytes.NewReader(registerPayload))
 	regRR := httptest.NewRecorder()
 
-	HandleRegister(logger, store, nil, regRR, regReq)
+	HandleRegister(logger, store, fake, regRR, regReq)
 
 	if regRR.Code != http.StatusAccepted {
 		t.Fatalf("register status = %d, want %d", regRR.Code, http.StatusAccepted)

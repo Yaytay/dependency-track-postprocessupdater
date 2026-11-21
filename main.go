@@ -56,7 +56,7 @@ func main() {
 		render.WriteMetrics(w, metricsStore.Snapshot())
 	})
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		store.HandleRegister(logger, registrationStore, metricsStore, w, r)
+		store.HandleRegister(logger, registrationStore, dtrackClient, w, r)
 	})
 	mux.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
 		store.HandleWebhook(ctx, logger, dtrackClient, registrationStore, metricsStore, w, r)

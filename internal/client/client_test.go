@@ -88,3 +88,36 @@ func TestApplyPostProcessingFailure(t *testing.T) {
 		t.Fatalf("empty registration: %v", err)
 	}
 }
+
+func TestReadyProject(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		status  int
+		body    string
+		want    string
+		wantErr bool
+	}{
+		{"ready", 200, `{"uuid":"project-id","lastBomImport":123}`, "project-id", false},
+		{"no import", 200, `{"uuid":"project-id"}`, "", false},
+		{"not found", 404, ``, "", false},
+		{"forbidden", 403, `denied`, "", true},
+		{"missing uuid", 200, `{"lastBomImport":123}`, "", true},
+		{"invalid response", 200, `{`, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v1/project/lookup" || r.URL.Query().Get("name") != "a & b" || r.URL.Query().Get("version") != "1+2" || r.Header.Get("X-Api-Key") != "key" {
+					t.Errorf("unexpected request: %s", r.URL.String())
+				}
+				w.WriteHeader(tc.status)
+				io.WriteString(w, tc.body)
+			}))
+			defer server.Close()
+			c := NewClient(server.URL, "key", time.Second, config.NewLogger("logfmt", "error", io.Discard))
+			got, err := c.ReadyProject(context.Background(), "a & b", "1+2")
+			if got != tc.want || (err != nil) != tc.wantErr {
+				t.Fatalf("got %q, %v", got, err)
+			}
+		})
+	}
+}

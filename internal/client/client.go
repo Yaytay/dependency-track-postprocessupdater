@@ -127,6 +127,45 @@ type ProjectSnapshot struct {
 	Counts  VulnerabilityCounts
 }
 
+func (c *Client) ReadyProject(ctx context.Context, name, version string) (string, error) {
+	u, err := url.Parse(c.baseURL + "/api/v1/project/lookup")
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	q.Set("name", name)
+	q.Set("version", version)
+	u.RawQuery = q.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("X-Api-Key", c.apiKey)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var project Project
+	if err := json.NewDecoder(resp.Body).Decode(&project); err != nil {
+		return "", err
+	}
+	if project.LastBomImport <= 0 {
+		return "", nil
+	}
+	if strings.TrimSpace(project.UUID) == "" {
+		return "", fmt.Errorf("project UUID missing from lookup response")
+	}
+	return project.UUID, nil
+}
+
 func (c *Client) FetchProjectSnapshots(ctx context.Context) ([]ProjectSnapshot, error) {
 	projects, err := c.fetchProjects(ctx)
 	if err != nil {

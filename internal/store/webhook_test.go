@@ -16,8 +16,10 @@ import (
 )
 
 type fakePostProcessor struct {
-	calls int
-	want  struct {
+	calls     int
+	readyUUID string
+	lookupErr error
+	want      struct {
 		projectUUID  string
 		tags         []string
 		suppressions []model.Suppression
@@ -26,6 +28,10 @@ type fakePostProcessor struct {
 		teams        []string
 	}
 	err error
+}
+
+func (f *fakePostProcessor) ReadyProject(ctx context.Context, name, version string) (string, error) {
+	return f.readyUUID, f.lookupErr
 }
 
 func (f *fakePostProcessor) ApplyPostProcessing(ctx context.Context, projectUUID string, tags []string, suppressions []model.Suppression, description *string, properties []model.Property, teams []string) error {

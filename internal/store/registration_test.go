@@ -1,13 +1,49 @@
 package store
 
 import (
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"dependency-track-postprocessupdater/internal/config"
 	"dependency-track-postprocessupdater/internal/model"
 )
+
+func TestRegisterImmediateProcessing(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		processor     fakePostProcessor
+		status, calls int
+	}{
+		{"ready", fakePostProcessor{readyUUID: "project-id"}, http.StatusAccepted, 1},
+		{"not ready", fakePostProcessor{}, http.StatusAccepted, 0},
+		{"lookup error", fakePostProcessor{lookupErr: errors.New("lookup failed")}, http.StatusInternalServerError, 0},
+		{"apply error", fakePostProcessor{readyUUID: "project-id", err: errors.New("apply failed")}, http.StatusInternalServerError, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newTestFileStore(t)
+			req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"name":"example","version":"1","description":"new","tags":["tag"]}`))
+			rr := httptest.NewRecorder()
+			HandleRegister(config.NewLogger("logfmt", "error", io.Discard), store, &tc.processor, rr, req)
+			if rr.Code != tc.status || tc.processor.calls != tc.calls {
+				t.Fatalf("status=%d calls=%d", rr.Code, tc.processor.calls)
+			}
+			reg, err := store.Get("example", "1")
+			if err != nil || reg.Description == nil || *reg.Description != "new" {
+				t.Fatalf("registration not retained: %+v, %v", reg, err)
+			}
+			if tc.calls == 1 && (tc.processor.want.projectUUID != "project-id" || len(tc.processor.want.tags) != 1) {
+				t.Fatalf("unexpected processing arguments: %+v", tc.processor.want)
+			}
+		})
+	}
+}
 
 func newTestFileStore(t *testing.T) *FileStore {
 	t.Helper()
