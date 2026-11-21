@@ -78,6 +78,35 @@ func (s *FileStore) statePath(name, version string) string {
 }
 
 func (s *FileStore) Put(reg Registration) error {
+	return s.put("", reg)
+}
+
+func validSwarm(swarm string) bool {
+	if len(swarm) == 0 || len(swarm) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(swarm, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for i := 0; i < len(label); i++ {
+			c := label[i]
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (s *FileStore) PutSwarm(swarm string, reg Registration) error {
+	if !validSwarm(swarm) {
+		return errors.New("invalid swarm name")
+	}
+	return s.put(swarm, reg)
+}
+
+func (s *FileStore) put(swarm string, reg Registration) error {
 	if strings.TrimSpace(reg.Name) == "" {
 		return errors.New("name is required")
 	}
@@ -88,6 +117,10 @@ func (s *FileStore) Put(reg Registration) error {
 
 	dir := s.registrationDir(reg.Name, reg.Version)
 	regPath := s.registrationPath(reg.Name, reg.Version)
+	if swarm != "" {
+		dir = filepath.Join(s.dir, swarm, registrationKey(reg.Name, reg.Version))
+		regPath = filepath.Join(dir, "registration.json")
+	}
 
 	body, err := json.MarshalIndent(reg, "", "  ")
 	if err != nil {
@@ -119,6 +152,63 @@ func (s *FileStore) Get(name, version string) (Registration, error) {
 		return reg, err
 	}
 	return reg, nil
+}
+
+func (s *FileStore) GetMerged(name, version string) (Registration, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	merged, err := s.Get(name, version)
+	found := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return Registration{}, err
+	}
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return Registration{}, err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !validSwarm(entry.Name()) {
+			continue
+		}
+		path := filepath.Join(s.dir, entry.Name(), registrationKey(name, version), "registration.json")
+		body, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return Registration{}, err
+		}
+		var reg Registration
+		if err := json.Unmarshal(body, &reg); err != nil {
+			return Registration{}, err
+		}
+		if !found {
+			merged = reg
+			found = true
+			continue
+		}
+		if merged.Description == nil {
+			merged.Description = reg.Description
+		}
+		merged.Properties = append(merged.Properties, reg.Properties...)
+		merged.Teams = append(merged.Teams, reg.Teams...)
+		merged.Tags = append(merged.Tags, reg.Tags...)
+		merged.Suppressions = append(merged.Suppressions, reg.Suppressions...)
+	}
+	if !found {
+		return Registration{}, os.ErrNotExist
+	}
+	return merged, nil
+}
+
+func (s *FileStore) DeleteSwarm(swarm string) error {
+	if !validSwarm(swarm) {
+		return errors.New("invalid swarm name")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return os.RemoveAll(filepath.Join(s.dir, swarm))
 }
 
 func (s *FileStore) UpdateLastNotifiedAt(name, version string, at time.Time) error {
@@ -181,6 +271,8 @@ func (s *FileStore) LastContact(name, version string) (time.Time, error) {
 }
 
 func (s *FileStore) PurgeOlderThan(cutoff time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
 		return err
@@ -228,6 +320,22 @@ type RegistrationProcessor interface {
 
 func HandleRegister(logger *config.Logger, store *FileStore, dtrack RegistrationProcessor, w http.ResponseWriter, r *http.Request) {
 	logger.Info("received registration", "method", r.Method, "url", r.URL)
+	swarm := ""
+	if r.URL.Path != "/register" {
+		swarm = strings.TrimPrefix(r.URL.Path, "/register/")
+		if !validSwarm(swarm) {
+			http.Error(w, "invalid swarm name", http.StatusBadRequest)
+			return
+		}
+		if r.Method == http.MethodDelete {
+			if err := store.DeleteSwarm(swarm); err != nil {
+				http.Error(w, "delete failed", http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
 
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -260,7 +368,13 @@ func HandleRegister(logger *config.Logger, store *FileStore, dtrack Registration
 		return
 	}
 
-	if err := store.Put(reg); err != nil {
+	var err error
+	if swarm == "" {
+		err = store.Put(reg)
+	} else {
+		err = store.PutSwarm(swarm, reg)
+	}
+	if err != nil {
 		logger.Error("registration failed", "name", reg.Name, "version", reg.Version, "err", err)
 		http.Error(w, fmt.Sprintf("store failed: %v", err), http.StatusInternalServerError)
 		return
@@ -274,6 +388,12 @@ func HandleRegister(logger *config.Logger, store *FileStore, dtrack Registration
 		return
 	}
 	if projectUUID != "" {
+		reg, err = store.GetMerged(reg.Name, reg.Version)
+		if err != nil {
+			logger.Error("registration lookup failed", "err", err)
+			http.Error(w, "registration stored; lookup failed", http.StatusInternalServerError)
+			return
+		}
 		if err := dtrack.ApplyPostProcessing(r.Context(), projectUUID, reg.Tags, reg.Suppressions, reg.Description, reg.Properties, reg.Teams); err != nil {
 			logger.Error("post-processing failed", "project_uuid", projectUUID, "err", err)
 			http.Error(w, fmt.Sprintf("registration stored; processing failed: %v", err), http.StatusInternalServerError)

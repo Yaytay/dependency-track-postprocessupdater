@@ -93,6 +93,14 @@ The service reads the current settings and skips writes that would make no chang
 
 Registration returns `202` after storing it and, when a project has a nonzero `lastBomImport`, applying it immediately. A missing project or import timestamp leaves it for a later webhook. The timestamp is a best-effort readiness signal: it does not rule out a newer BOM still processing. Lookup or processing failures return `500`, but the registration remains stored for retry or a future webhook; changes may already be partially applied. Project lookup requires `VIEW_PORTFOLIO`.
 
+### `POST /register/<swarm>` and `DELETE /register/<swarm>`
+
+POST accepts the same payload as `/register`, storing it separately for the named swarm and project. A subsequent POST for the same swarm and project replaces that swarm's registration; other projects and swarms are unaffected. Swarm names are ASCII DNS names, with labels of 1–63 letters, digits or hyphens, no leading or trailing hyphens, and at most 253 characters in total.
+
+Before immediate or webhook processing, registrations for the project are combined across the ordinary registration and all swarms. Properties, teams, tags and suppressions are concatenated, starting with the ordinary registration and then swarms in name order. The ordinary description takes precedence, including an empty description; otherwise the first available swarm description is used.
+
+DELETE removes all registrations for the swarm and returns `204`, including when the swarm does not exist. It does not undo changes already applied to Dependency-Track.
+
 ### `POST /webhook`
 
 Receives Dependency-Track webhook events.

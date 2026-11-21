@@ -86,7 +86,7 @@ func HandleWebhook(ctx context.Context, logger *config.Logger, dtrack PostProces
 		return
 	}
 
-	reg, err := store.Get(name, version)
+	reg, err := store.GetMerged(name, version)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			logger.Info("webhook ignored; no registration", "name", name, "version", version, "project_uuid", projectUUID)
