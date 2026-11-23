@@ -91,6 +91,37 @@ func TestApplyPostProcessingFailure(t *testing.T) {
 	}
 }
 
+func TestHTTPStatusErrorsIncludeMethodAndPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "denied", http.StatusForbidden)
+	}))
+	defer server.Close()
+	c := NewClient(server.URL, "key", time.Second, config.NewLogger("logfmt", "error", io.Discard))
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		want string
+		call func() error
+	}{
+		{"lookup", "GET /api/v1/project/lookup", func() error { _, err := c.ReadyProject(ctx, "name", "version"); return err }},
+		{"projects", "GET /api/v1/project", func() error { _, err := c.fetchProjects(ctx); return err }},
+		{"findings", "GET /api/v1/finding/project/id", func() error { _, err := c.fetchProjectVulnerabilityCounts(ctx, "id"); return err }},
+		{"project", "GET /api/v1/project/id", func() error { _, err := c.fetchProjectJSON(ctx, "id"); return err }},
+		{"update project", "POST /api/v1/project", func() error { return c.updateProjectJSON(ctx, json.RawMessage(`{}`)) }},
+		{"request JSON", "PUT /api/v1/acl/mapping", func() error { _, err := c.requestJSON(ctx, http.MethodPut, "/api/v1/acl/mapping?secret=value", nil, http.StatusOK); return err }},
+		{"bom", "GET /api/v1/bom/cyclonedx/project/id", func() error { _, err := c.fetchProjectBomWithVulnerabilities(ctx, "id"); return err }},
+		{"analysis lookup", "GET /api/v1/analysis", func() error { _, err := c.analysisMatches(ctx, AnalysisRequest{}); return err }},
+		{"analysis update", "PUT /api/v1/analysis", func() error { return c.putAnalysis(ctx, AnalysisRequest{}) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.call()
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "unexpected status 403: denied") || strings.Contains(err.Error(), "?secret=") {
+				t.Fatalf("expected method, path and status without query, got %v", err)
+			}
+		})
+	}
+}
+
 func TestReadyProject(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

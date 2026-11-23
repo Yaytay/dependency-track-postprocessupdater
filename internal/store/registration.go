@@ -33,7 +33,7 @@ type Registration struct {
 
 type RegistrationState struct {
 	LastNotifiedAt time.Time `json:"lastNotifiedAt,omitempty"`
-}
+}q
 
 type FileStore struct {
 	dir   string

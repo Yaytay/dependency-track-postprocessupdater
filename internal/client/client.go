@@ -33,6 +33,11 @@ func NewClient(baseURL, apiKey string, timeout time.Duration, logger *config.Log
 	}
 }
 
+func unexpectedStatus(req *http.Request, resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return fmt.Errorf("%s %s: unexpected status %d: %s", req.Method, req.URL.EscapedPath(), resp.StatusCode, strings.TrimSpace(string(body)))
+}
+
 type Project struct {
 	Authors                   []ProjectAuthor   `json:"authors,omitempty"`
 	Name                      string            `json:"name"`
@@ -150,8 +155,7 @@ func (c *Client) ReadyProject(ctx context.Context, name, version string) (string
 		return "", nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", unexpectedStatus(req, resp)
 	}
 	var project Project
 	if err := json.NewDecoder(resp.Body).Decode(&project); err != nil {
@@ -217,9 +221,9 @@ func (c *Client) fetchProjects(ctx context.Context) ([]Project, error) {
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			err := unexpectedStatus(req, resp)
 			resp.Body.Close()
-			return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+			return nil, err
 		}
 
 		var page []Project
@@ -260,8 +264,7 @@ func (c *Client) fetchProjectVulnerabilityCounts(ctx context.Context, projectUUI
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return VulnerabilityCounts{}, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return VulnerabilityCounts{}, unexpectedStatus(req, resp)
 	}
 
 	var findings []struct {
@@ -365,8 +368,7 @@ func (c *Client) fetchProjectJSON(ctx context.Context, projectUUID string) (json
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, unexpectedStatus(req, resp)
 	}
 
 	return io.ReadAll(resp.Body)
@@ -442,8 +444,7 @@ func (c *Client) updateProjectJSON(ctx context.Context, projectJSON json.RawMess
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return unexpectedStatus(req, resp)
 	}
 	return nil
 }
@@ -608,8 +609,7 @@ func (c *Client) requestJSON(ctx context.Context, method, path string, payload a
 			return io.ReadAll(resp.Body)
 		}
 	}
-	message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(message)))
+	return nil, unexpectedStatus(req, resp)
 }
 
 func (c *Client) fetchProjectBomWithVulnerabilities(ctx context.Context, projectUUID string) (*bomResponse, error) {
@@ -636,8 +636,7 @@ func (c *Client) fetchProjectBomWithVulnerabilities(ctx context.Context, project
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, unexpectedStatus(req, resp)
 	}
 
 	var out bomResponse
@@ -743,8 +742,7 @@ func (c *Client) analysisMatches(ctx context.Context, desired AnalysisRequest) (
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return false, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return false, unexpectedStatus(req, resp)
 	}
 	var current struct {
 		State         model.AnalysisState         `json:"analysisState"`
@@ -783,8 +781,7 @@ func (c *Client) putAnalysis(ctx context.Context, reqBody AnalysisRequest) error
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return unexpectedStatus(req, resp)
 	}
 	return nil
 }
